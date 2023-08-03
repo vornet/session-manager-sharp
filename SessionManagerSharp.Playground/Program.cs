@@ -1,13 +1,4 @@
-# SessionManagerSharp
-
-An unofficial AWS Systems Managers' Session Manager client for C#/.NET based on https://github.com/aws/session-manager-plugin.
-
-THe primary motivation is to enable automation through it from .NET.
-
-## Example Usage
-
-```csharp
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using VorNet.SessionManagerSharp;
 
 var builder = new ConfigurationBuilder()  
@@ -25,4 +16,4 @@ foreach (string responseLine in response)
 {
     Console.WriteLine(responseLine);
 }
-```
+

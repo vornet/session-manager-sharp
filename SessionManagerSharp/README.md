@@ -1,4 +1,4 @@
-# SessionManagerSharp
+﻿# SessionManagerSharp
 
 An unofficial AWS Systems Managers' Session Manager client for C#/.NET based on https://github.com/aws/session-manager-plugin.
 
