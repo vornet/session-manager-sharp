@@ -2,7 +2,12 @@
 
 An unofficial AWS Systems Managers' Session Manager client for C#/.NET based on https://github.com/aws/session-manager-plugin.
 
-THe primary motivation is to enable automation through it from .NET.
+The primary motivation and use-case is to enable automation.
+
+Two methods are supported:
+
+- `Task<string> SendStdOutAsync(string commandText)` sends a command over standard input and returns the response from it.
+- `Task SendTextFileStreamAsync(Stream stream, string destFilename)` streams a text file over standard input to a destination filename.  This is experimental.
 
 ## Example Usage
 
@@ -19,10 +24,11 @@ IConfiguration config = builder.Build();
 ISessionManagerClientFactory factory = new SessionManagerClientFactory(config);
 ISessionManagerClient client = factory.Create("i-0a42f2bd61658a835");
 
-string[] response = await client.SendStdOutAsync("ls\r");
+// Run a command.
+Console.WriteLine(await client.SendStdOutAsync("sudo ls /home/ubuntu"));
 
-foreach (string responseLine in response)
-{
-    Console.WriteLine(responseLine);
+// Send a text file.
+using var fileStream = new FileStream("example.txt", FileMode.Open, FileAccess.Read);
+await client.SendTextFileStreamAsync(fileStream, "/home/ubuntu/example.txt");
 }
 ```

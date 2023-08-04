@@ -3,6 +3,8 @@ using Amazon.SimpleSystemsManagement;
 using System.Text;
 using VorNet.SessionManagerSharp.Protocol;
 using VorNet.SessionManagerSharp.Protocol.Models;
+using System.IO;
+using Amazon.Runtime;
 
 namespace VorNet.SessionManagerSharp
 {
@@ -12,6 +14,8 @@ namespace VorNet.SessionManagerSharp
         private readonly IProtocolClient _protocalClient;
         private readonly string _target;
 
+        private int _currentSequenceNumber = 0;
+
         public SessionManagerClient(IAmazonSimpleSystemsManagement ssmClient, IProtocolClient protocolClient, string target)
         {
             _ssmClient = ssmClient ?? throw new ArgumentNullException(nameof(ssmClient));
@@ -19,51 +23,68 @@ namespace VorNet.SessionManagerSharp
             _target = target ?? throw new ArgumentNullException(nameof(target));
         }
 
-        public async Task<string[]> SendStdOutAsync(string commandText)
+        public async Task<string> SendStdOutAsync(string commandText)
         {
             if (!_protocalClient.IsConnected) { await ConnectAsync(); }
 
-            await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
+            if (!commandText.EndsWith("\r"))
+            {
+                // Always add a carriage return to commands.
+                commandText += "\r";
+            }
 
-            // Set Terminal size - not really needed.
-            //await SendMessageAsync(wsClient, new ClientMessage
-            //{
-            //    MessageType = "input_stream_data",
-            //    SchemaVersion = 1,
-            //    CreatedDate = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            //    SequenceNumber = 0,
-            //    Flags = 0,
-            //    MessageId = Guid.NewGuid().ToByteArray(),
-            //    PayloadType = 3,
-            //    Payload = Encoding.ASCII.GetBytes("{\"cols\":232,\"rows\":22}"),
-            //});
+            return await SendStdOutRawAsync(Encoding.ASCII.GetBytes(commandText));
+        }
 
-            //await ReadAndAcknowledgeNextMessageAsync(wsClient);
+        public async Task SendTextFileStreamAsync(Stream stream, string destFilename)
+        {
+            if (!_protocalClient.IsConnected) { await ConnectAsync(); }
+
+            // Start streaming stdin to the file.
+            await SendStdOutAsync($"sudo cp /dev/stdin {destFilename}");
+
+            await Task.Delay(1000);
+
+            // Stream the file.
+            using var streamReader = new StreamReader(stream, new ASCIIEncoding());
+            await SendStdOutAsync(await streamReader.ReadToEndAsync());
+
+            // End the stream.
+            await SendStdOutRawAsync(new byte[] { 13, 4 });
+
+            // Give other users rw access to the file.
+            await SendStdOutAsync($"sudo chmod o+rw {destFilename}");
+        }
+
+        private async Task<string> SendStdOutRawAsync(byte[] commandText)
+        {
+            if (!_protocalClient.IsConnected) { await ConnectAsync(); }
 
             await _protocalClient.SendMessageAsync(new ClientMessage
             {
                 MessageType = "input_stream_data",
                 SchemaVersion = 1,
                 CreatedDate = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                SequenceNumber = 0,
+                SequenceNumber = _currentSequenceNumber++,
                 Flags = 0,
                 MessageId = Guid.NewGuid().ToByteArray(),
                 PayloadType = 1,
-                Payload = Encoding.ASCII.GetBytes(commandText),
+                Payload = commandText,
             });
 
-            // Read the echo back.
-            await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
+            // Wait for the echo.
+            ClientMessage clientMessage;
+            int retry = 5;
+            do
+            {
+                clientMessage = await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
+                retry--;
+            }
+            while (retry > 0 && Encoding.ASCII.GetString(commandText).Trim() != Encoding.ASCII.GetString(clientMessage.Payload).Trim());
 
             // Read actual response from command.
-            ClientMessage clientMessage = await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
-
-            return new string[] { Encoding.ASCII.GetString(clientMessage.Payload) };
-        }
-
-        public async Task SendTextFileStreamAsync(Stream fileStream)
-        {
-            if (!_protocalClient.IsConnected) { await ConnectAsync(); }
+            clientMessage = await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
+            return Encoding.ASCII.GetString(clientMessage.Payload);
         }
 
         private async Task ConnectAsync()
@@ -74,6 +95,7 @@ namespace VorNet.SessionManagerSharp
             });
 
             await _protocalClient.ConnectAsync(new Uri(response.StreamUrl), response.TokenValue);
+            await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
         }
     }
 }

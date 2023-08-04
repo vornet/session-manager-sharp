@@ -10,10 +10,9 @@ IConfiguration config = builder.Build();
 ISessionManagerClientFactory factory = new SessionManagerClientFactory(config);
 ISessionManagerClient client = factory.Create("i-0a42f2bd61658a835");
 
-string[] response = await client.SendStdOutAsync("ls\r");
+// Run a command.
+Console.WriteLine(await client.SendStdOutAsync("sudo ls /home/ubuntu"));
 
-foreach (string responseLine in response)
-{
-    Console.WriteLine(responseLine);
-}
-
+// Send a text file.
+using var fileStream = new FileStream("example.txt", FileMode.Open, FileAccess.Read);
+await client.SendTextFileStreamAsync(fileStream, "/home/ubuntu/example.txt");

@@ -1,6 +1,7 @@
 ﻿using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using VorNet.SessionManagerSharp.Protocol.ClientWebSocketAbstraction;
 using VorNet.SessionManagerSharp.Protocol.Models;
 using VorNet.SessionManagerSharp.Protocol.Serializers;
@@ -49,7 +50,6 @@ namespace VorNet.SessionManagerSharp.Protocol
                 ms.Write(buffer.Array, buffer.Offset, result.Count);
             }
             while (!result.EndOfMessage);
-
 
             ClientMessage clientMessage = _clientMessageSerializer.Deserialize(ms.ToArray());
 
