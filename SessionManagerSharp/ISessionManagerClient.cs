@@ -2,7 +2,9 @@
 {
     public interface ISessionManagerClient
     {
-        Task<string> SendStdOutAsync(string commandText);
+        Task SendStdOutAsync(string commandText);
+
+        Task<string> WaitForStdInAsync(string text);
 
         Task SendTextFileStreamAsync(Stream stream, string destFilename);
     }

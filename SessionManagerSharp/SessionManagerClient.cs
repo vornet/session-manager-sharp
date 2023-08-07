@@ -16,14 +16,28 @@ namespace VorNet.SessionManagerSharp
 
         private int _currentSequenceNumber = 0;
 
+        public string _stdInputBuffer = string.Empty;
+
         public SessionManagerClient(IAmazonSimpleSystemsManagement ssmClient, IProtocolClient protocolClient, string target)
         {
             _ssmClient = ssmClient ?? throw new ArgumentNullException(nameof(ssmClient));
             _protocalClient = protocolClient ?? throw new ArgumentNullException(nameof(protocolClient));
             _target = target ?? throw new ArgumentNullException(nameof(target));
+
+            _protocalClient.OnMessageReceived += _protocalClient_OnMessageReceived;
+            _protocalClient.OnOutputStreamReceived += _protocalClient_OnOutputStreamReceived;
         }
 
-        public async Task<string> SendStdOutAsync(string commandText)
+        private void _protocalClient_OnOutputStreamReceived(byte[] outputStream)
+        {
+            _stdInputBuffer = Encoding.ASCII.GetString(outputStream);
+        }
+
+        private void _protocalClient_OnMessageReceived(ClientMessage message)
+        {
+        }
+
+        public async Task SendStdOutAsync(string commandText)
         {
             if (!_protocalClient.IsConnected) { await ConnectAsync(); }
 
@@ -33,7 +47,7 @@ namespace VorNet.SessionManagerSharp
                 commandText += "\r";
             }
 
-            return await SendStdOutRawAsync(Encoding.ASCII.GetBytes(commandText));
+            await SendStdOutRawAsync(Encoding.ASCII.GetBytes(commandText));
         }
 
         public async Task SendTextFileStreamAsync(Stream stream, string destFilename)
@@ -42,8 +56,6 @@ namespace VorNet.SessionManagerSharp
 
             // Start streaming stdin to the file.
             await SendStdOutAsync($"sudo cp /dev/stdin {destFilename}");
-
-            await Task.Delay(1000);
 
             // Stream the file.
             using var streamReader = new StreamReader(stream, new ASCIIEncoding());
@@ -56,7 +68,7 @@ namespace VorNet.SessionManagerSharp
             await SendStdOutAsync($"sudo chmod o+rw {destFilename}");
         }
 
-        private async Task<string> SendStdOutRawAsync(byte[] commandText)
+        private async Task SendStdOutRawAsync(byte[] commandText)
         {
             if (!_protocalClient.IsConnected) { await ConnectAsync(); }
 
@@ -71,20 +83,6 @@ namespace VorNet.SessionManagerSharp
                 PayloadType = 1,
                 Payload = commandText,
             });
-
-            // Wait for the echo.
-            ClientMessage clientMessage;
-            int retry = 5;
-            do
-            {
-                clientMessage = await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
-                retry--;
-            }
-            while (retry > 0 && Encoding.ASCII.GetString(commandText).Trim() != Encoding.ASCII.GetString(clientMessage.Payload).Trim());
-
-            // Read actual response from command.
-            clientMessage = await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
-            return Encoding.ASCII.GetString(clientMessage.Payload);
         }
 
         private async Task ConnectAsync()
@@ -95,7 +93,20 @@ namespace VorNet.SessionManagerSharp
             });
 
             await _protocalClient.ConnectAsync(new Uri(response.StreamUrl), response.TokenValue);
-            await _protocalClient.ReadAndAcknowledgeNextMessageAsync();
+        }
+
+        public async Task<string> WaitForStdInAsync(string text)
+        {
+            while (true)
+            {
+                if (_stdInputBuffer.Contains(text))
+                {
+                    string stdInputBuffer = _stdInputBuffer;
+                    _stdInputBuffer = String.Empty;
+                    return stdInputBuffer;
+                }
+                await Task.Delay(50);
+            }
         }
     }
 }
